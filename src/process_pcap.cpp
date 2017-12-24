@@ -17,6 +17,7 @@
 #include <pcl/filters/project_inliers.h>
 #include <pcl/ModelCoefficients.h>
 #include <pcl/segmentation/extract_clusters.h>
+#include <pcl/surface/convex_hull.h>
 
 using namespace std;
 using namespace pcl;
@@ -41,9 +42,8 @@ int main(int argc, char *argv[]) {
 
     // Point Cloud
     PointCloud<PointType>::ConstPtr cloud (new PointCloud<PointType>);
-    vector<PointCloud<PointType>::Ptr> cloud_clusters;
-    vector<vector<float> > cluster_centers;
-    vector<uint32_t> cluster_colors;
+    vector<PointCloud<PointType>::Ptr> cluster_polygon;
+    vector<vector<double> > cluster_colors;
 
     // PCL Visualizer
     boost::shared_ptr<visualization::PCLVisualizer> viewer( new visualization::PCLVisualizer( "Velodyne Viewer" ) );
@@ -55,11 +55,11 @@ int main(int argc, char *argv[]) {
     // Retrieved Point Cloud Callback Function
     boost::mutex mutex;
     boost::function<void( const PointCloud<PointType>::ConstPtr& )> function =
-        [ &cloud, &cluster_colors, &cluster_centers, &mutex ]( const PointCloud<PointType>::ConstPtr& ptr ){
-            boost::mutex::scoped_lock lock( mutex );
+        [ &cloud, &cluster_polygon, &mutex ]( const PointCloud<PointType>::ConstPtr& ptr ){
+            boost::mutex::scoped_lock lock( mutex ); // for multi-threading
 
             /* Point Cloud Processing */
-            cluster_centers.clear();
+            cluster_polygon.clear();
             PointCloud<PointType>::Ptr cloud_filtered (new PointCloud<PointType>);
             cloud = ptr;
 
@@ -142,31 +142,17 @@ int main(int argc, char *argv[]) {
 
             // iterate through all points in each cluster
             for (vector<PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); it++) {
-                vector<float> center{0.0, 0.0};
-                int size_of_cluster = 0;
-                uint32_t rgb = 0;
-                if(cluster_colors.size() > it - cluster_indices.begin()) { // color already chosen for cluster
-                    rgb = cluster_colors[it - cluster_indices.begin()];
-                }
-                else { // generate a random color
-                    uint8_t r = (uint8_t)((float)(rand()) / RAND_MAX * 255),
-                            g = (uint8_t)((float)(rand()) / RAND_MAX * 255),
-                            b = (uint8_t)((float)(rand()) / RAND_MAX * 255);
-                    uint32_t rgb = ((uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b);
-                    cluster_colors.push_back(rgb);
-                }
-
                 // set colors and compute centroids
+                PointCloud<PointType>::Ptr cluster_points (new PointCloud<PointType>);
                 for (vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); pit++) {
-                    cloud_filtered->points[*pit].rgba = rgb;
-                    center[0] += cloud_filtered->points[*pit].x;
-                    center[1] += cloud_filtered->points[*pit].y;
-                    size_of_cluster++;
+                    cluster_points->push_back(cloud_filtered->points[*pit]);
                 }
-                center[0] /= size_of_cluster;
-                center[1] /= size_of_cluster;
-                cluster_centers.push_back(center);
-                cout << center[0] << ", " << center[1] << endl;
+                PointCloud<PointType>::Ptr cloud_hull (new PointCloud<PointType>);
+                ConvexHull<PointType> chull;
+                chull.setInputCloud (cluster_points);
+                chull.reconstruct (*cloud_hull);
+
+                cluster_polygon.push_back(cloud_hull);
             }
             cloud = cloud_filtered;
         };
@@ -191,9 +177,29 @@ int main(int argc, char *argv[]) {
         boost::mutex::scoped_try_lock lock( mutex );
 
         if(lock.owns_lock()) {
-            visualization::PointCloudColorHandlerRGBField<PointXYZRGBA> rgb(cloud);
-            if( !viewer->updatePointCloud( cloud, rgb, "cloud" ) ){
-                viewer->addPointCloud( cloud, rgb, "cloud" );
+            // visualization::PointCloudColorHandlerRGBField<PointXYZRGBA> rgb(cloud);
+            // if( !viewer->updatePointCloud( cloud, rgb, "cloud" ) ){
+            //     viewer->addPointCloud( cloud, rgb, "cloud" );
+            // }
+
+            for (int i = 0; i < cluster_polygon.size(); i++) {
+                PointCloud<PointType>::Ptr chull = cluster_polygon[i];
+                double r = 0, g = 0, b = 0;
+                if(i < cluster_colors.size()) { // color already chosen for cluster
+                    r = cluster_colors[i][0];
+                    g = cluster_colors[i][1];
+                    b = cluster_colors[i][2];
+                }
+                else { // generate a random color
+                    r = (double)rand() / RAND_MAX; // normalize between 0.0 and 1.0
+                    g = (double)rand() / RAND_MAX;
+                    b = (double)rand() / RAND_MAX;
+                    vector<double> rgb = {r, g, b};
+                    cluster_colors.push_back(rgb);
+                }
+                viewer->addPolygon<PointType> (chull, r, g, b, "polygon", 0);
+                // pcl::visualization::PointCloudColorHandlerCustom<PointType> single_color(chull, (uint32_t)(r * 255), (uint32_t)(g * 255), (uint32_t)(b * 255));
+                // viewer->addPointCloud<PointType> (chull, single_color, "cloud");
             }
         }
     }
