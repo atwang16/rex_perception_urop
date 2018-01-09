@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     PointCloud<PointType>::ConstPtr cloud (new PointCloud<PointType>);
     vector<PointCloud<PointType>::Ptr> cluster_polygon;
     vector<array<double, 2> > cluster_centers;
-    vector<vector<double> > cluster_colors;
+    vector<array<double, 3> > cluster_colors;
 
     double RADIUS = 0.3;
 
@@ -61,7 +61,8 @@ int main(int argc, char *argv[]) {
             /* Point Cloud Processing */
             cluster_polygon.clear();
             cluster_centers.clear();
-            PointCloud<PointType>::Ptr cloud_filtered (new PointCloud<PointType>);
+            PointCloud<PointType>::Ptr cloud_prefilter (new PointCloud<PointType>);
+            PointCloud<PointType>::Ptr cloud_postfilter (new PointCloud<PointType>);
             cloud = ptr;
 
             // Filter out all points within threshold box from vehicle (origin)
@@ -80,18 +81,18 @@ int main(int argc, char *argv[]) {
             ConditionalRemoval<PointType> condrem;
             condrem.setCondition(range_cond);
             condrem.setInputCloud(cloud);
-            condrem.filter(*cloud_filtered);
-            cloud = cloud_filtered;
+            condrem.filter(*cloud_postfilter);
+//            cloud = cloud_postfilter;
 
             // Filter out points that are higher than vehicle
-            double height_above_water = 4.0;
-            double height_above_lidar = 3.0;
+            const float height_above_water = 5.0;
+            const float height_above_lidar = 3.0;
             PassThrough<PointType> pass;
-            pass.setInputCloud (cloud);
+            pass.setInputCloud (cloud_postfilter);
             pass.setFilterFieldName ("z");
             pass.setFilterLimits(-height_above_water, height_above_lidar);
-            pass.filter(*cloud_filtered);
-            cloud = cloud_filtered;
+            pass.filter(*cloud_postfilter);
+//            cloud = cloud_postfilter;
 
             // Project all points down to XY plane
             ModelCoefficients::Ptr coefficients (new ModelCoefficients ());
@@ -102,32 +103,32 @@ int main(int argc, char *argv[]) {
 
             ProjectInliers<PointType> proj;
             proj.setModelType (SACMODEL_PLANE);
-            proj.setInputCloud (cloud);
+            proj.setInputCloud (cloud_postfilter);
             proj.setModelCoefficients (coefficients);
-            proj.filter (*cloud_filtered);
-            cloud = cloud_filtered;
+            proj.filter (*cloud_postfilter);
+//            cloud = cloud_postfilter;
 
             // Downsample the dataset using voxel grids
             float leaf_size = 0.1f;
             VoxelGrid<PointType> vg;
-            vg.setInputCloud (cloud);
+            vg.setInputCloud (cloud_postfilter);
             vg.setLeafSize (leaf_size, leaf_size, leaf_size);
-            vg.filter (*cloud_filtered);
-            cloud = cloud_filtered;
+            vg.filter (*cloud_postfilter);
+//            cloud = cloud_postfilter;
 
             // Filter out all points which don't have many neighbors within a particular radius
             float radius = 2.0;
             int min_neighbors = 4;
             RadiusOutlierRemoval<PointType> outrem;
-            outrem.setInputCloud(cloud);
+            outrem.setInputCloud(cloud_postfilter);
             outrem.setRadiusSearch(radius);
             outrem.setMinNeighborsInRadius(min_neighbors);
-            outrem.filter (*cloud_filtered);
-            cloud = cloud_filtered;
+            outrem.filter (*cloud_postfilter);
+//            cloud = cloud_postfilter;
 
             // Creating the KdTree object for the search method of the extraction
             search::KdTree<PointType>::Ptr tree (new search::KdTree<PointType>);
-            tree->setInputCloud (cloud_filtered);
+            tree->setInputCloud (cloud_postfilter);
 
             float cluster_tolerance = 4.0f;
             int min_cluster_size = 5;
@@ -138,7 +139,7 @@ int main(int argc, char *argv[]) {
             ec.setMinClusterSize (min_cluster_size);
             ec.setMaxClusterSize (max_cluster_size);
             ec.setSearchMethod (tree);
-            ec.setInputCloud (cloud_filtered);
+            ec.setInputCloud (cloud_postfilter);
             ec.extract (cluster_indices);
 
             // iterate through all points in each cluster
@@ -146,10 +147,10 @@ int main(int argc, char *argv[]) {
                 // set colors and compute centroids
                 PointCloud<PointType>::Ptr cluster_points (new PointCloud<PointType>);
                 array<double, 2> centroid = {0, 0};
-                for (vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); pit++) {
-                    cluster_points->push_back(cloud_filtered->points[*pit]);
-                    centroid[0] += cloud_filtered->points[*pit].x;
-                    centroid[1] += cloud_filtered->points[*pit].y;
+                for (auto pit = it->indices.begin (); pit != it->indices.end (); pit++) {
+                    cluster_points->push_back(cloud_postfilter->points[*pit]);
+                    centroid[0] += cloud_postfilter->points[*pit].x;
+                    centroid[1] += cloud_postfilter->points[*pit].y;
                 }
                 if(cluster_points->width * cluster_points->height > 0) {
                     centroid[0] /= cluster_points->width * cluster_points->height;
@@ -163,7 +164,7 @@ int main(int argc, char *argv[]) {
                     cluster_centers.push_back(centroid);
                 }
             }
-            cloud = cloud_filtered;
+//            cloud = cloud_postfilter;
         };
 
     // VLP Grabber
@@ -205,7 +206,7 @@ int main(int argc, char *argv[]) {
                     r = ((double)(rand()) / RAND_MAX); // normalize between 0.0 and 1.0
                     g = ((double)(rand()) / RAND_MAX);
                     b = ((double)(rand()) / RAND_MAX);
-                    vector<double> rgb = {r, g, b};
+                    array<double, 3> rgb = {r, g, b};
                     cluster_colors.push_back(rgb);
                 }
 
@@ -220,8 +221,11 @@ int main(int argc, char *argv[]) {
                         viewer->addSphere ( chull->points[j], RADIUS, r, g, b, id );
                     }
                 }
+                visualization::PointCloudColorHandlerCustom<PointXYZRGBA> rgb(cloud, 255, 255, 255);
+                if(!viewer->updatePointCloud( cloud, rgb, "cloud")) {
+                    viewer->addPointCloud(cloud, rgb, "cloud");
+                }
                 std::cout << std::endl;
-//                }
             }
         }
     }
