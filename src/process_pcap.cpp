@@ -54,118 +54,112 @@ int main(int argc, char *argv[]) {
 
     // Retrieved Point Cloud Callback Function
     boost::mutex mutex;
-    boost::function<void( const PointCloud<PointType>::ConstPtr& )> function =
-        [ &cloud, &cluster_polygon, &cluster_centers, &mutex ]( const PointCloud<PointType>::ConstPtr& ptr ){
-            boost::mutex::scoped_lock lock( mutex ); // for multi-threading
+    boost::function<void( const PointCloud<PointType>::ConstPtr& )> function;
+    function = [ &cloud, &cluster_polygon, &cluster_centers, &mutex ](const PointCloud<PointType>::ConstPtr& ptr ){
+                boost::mutex::scoped_lock lock( mutex ); // for multi-threading
 
-            /* Point Cloud Processing */
-            cluster_polygon.clear();
-            cluster_centers.clear();
-            PointCloud<PointType>::Ptr cloud_prefilter (new PointCloud<PointType>);
-            PointCloud<PointType>::Ptr cloud_postfilter (new PointCloud<PointType>);
-            cloud = ptr;
+                /* Point Cloud Processing */
+                cluster_polygon.clear();
+                cluster_centers.clear();
+                PointCloud<PointType>::Ptr cloud_postfilter (new PointCloud<PointType>);
+                cloud = ptr;
 
-            // Filter out all points within threshold box from vehicle (origin)
-            double thresh = 3.0;
-            ConditionOr<PointType>::Ptr range_cond (new
-              ConditionOr<PointType> ());
-            range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
-              FieldComparison<PointType> ("x", ComparisonOps::GT, thresh)));
-            range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
-              FieldComparison<PointType> ("x", ComparisonOps::LT, -thresh)));
-            range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
-              FieldComparison<PointType> ("y", ComparisonOps::GT, thresh)));
-            range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
-              FieldComparison<PointType> ("y", ComparisonOps::LT, -thresh)));
+                // Filter out all points within threshold box from vehicle (origin)
+                double thresh = 3.0;
+                ConditionOr<PointType>::Ptr range_cond (new
+                  ConditionOr<PointType> ());
+                range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
+                  FieldComparison<PointType> ("x", ComparisonOps::GT, thresh)));
+                range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
+                  FieldComparison<PointType> ("x", ComparisonOps::LT, -thresh)));
+                range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
+                  FieldComparison<PointType> ("y", ComparisonOps::GT, thresh)));
+                range_cond->addComparison (FieldComparison<PointType>::ConstPtr (new
+                  FieldComparison<PointType> ("y", ComparisonOps::LT, -thresh)));
 
-            ConditionalRemoval<PointType> condrem;
-            condrem.setCondition(range_cond);
-            condrem.setInputCloud(cloud);
-            condrem.filter(*cloud_postfilter);
-//            cloud = cloud_postfilter;
+                ConditionalRemoval<PointType> condrem;
+                condrem.setCondition(range_cond);
+                condrem.setInputCloud(cloud);
+                condrem.filter(*cloud_postfilter);
 
-            // Filter out points that are higher than vehicle
-            const float height_above_water = 5.0;
-            const float height_above_lidar = 3.0;
-            PassThrough<PointType> pass;
-            pass.setInputCloud (cloud_postfilter);
-            pass.setFilterFieldName ("z");
-            pass.setFilterLimits(-height_above_water, height_above_lidar);
-            pass.filter(*cloud_postfilter);
-//            cloud = cloud_postfilter;
+                // Filter out points that are higher than vehicle
+                const float height_above_water = 5.0;
+                const float height_above_lidar = 3.0;
+                PassThrough<PointType> pass;
+                pass.setInputCloud (cloud_postfilter);
+                pass.setFilterFieldName ("z");
+                pass.setFilterLimits(-height_above_water, height_above_lidar);
+                pass.filter(*cloud_postfilter);
 
-            // Project all points down to XY plane
-            ModelCoefficients::Ptr coefficients (new ModelCoefficients ());
-            coefficients->values.resize (4);
-            coefficients->values[0] = coefficients->values[1] = 0;
-            coefficients->values[2] = 1.0;
-            coefficients->values[3] = 0;
+                // Project all points down to XY plane
+                ModelCoefficients::Ptr coefficients (new ModelCoefficients ());
+                coefficients->values.resize (4);
+                coefficients->values[0] = coefficients->values[1] = 0;
+                coefficients->values[2] = 1.0;
+                coefficients->values[3] = 0;
 
-            ProjectInliers<PointType> proj;
-            proj.setModelType (SACMODEL_PLANE);
-            proj.setInputCloud (cloud_postfilter);
-            proj.setModelCoefficients (coefficients);
-            proj.filter (*cloud_postfilter);
-//            cloud = cloud_postfilter;
+                ProjectInliers<PointType> proj;
+                proj.setModelType (SACMODEL_PLANE);
+                proj.setInputCloud (cloud_postfilter);
+                proj.setModelCoefficients (coefficients);
+                proj.filter (*cloud_postfilter);
 
-            // Downsample the dataset using voxel grids
-            float leaf_size = 0.1f;
-            VoxelGrid<PointType> vg;
-            vg.setInputCloud (cloud_postfilter);
-            vg.setLeafSize (leaf_size, leaf_size, leaf_size);
-            vg.filter (*cloud_postfilter);
-//            cloud = cloud_postfilter;
+                // Downsample the dataset using voxel grids
+                float leaf_size = 0.1f;
+                VoxelGrid<PointType> vg;
+                vg.setInputCloud (cloud_postfilter);
+                vg.setLeafSize (leaf_size, leaf_size, leaf_size);
+                vg.filter (*cloud_postfilter);
 
-            // Filter out all points which don't have many neighbors within a particular radius
-            float radius = 2.0;
-            int min_neighbors = 4;
-            RadiusOutlierRemoval<PointType> outrem;
-            outrem.setInputCloud(cloud_postfilter);
-            outrem.setRadiusSearch(radius);
-            outrem.setMinNeighborsInRadius(min_neighbors);
-            outrem.filter (*cloud_postfilter);
-//            cloud = cloud_postfilter;
+                // Filter out all points which don't have many neighbors within a particular radius
+                float radius = 2.0;
+                int min_neighbors = 4;
+                RadiusOutlierRemoval<PointType> outrem;
+                outrem.setInputCloud(cloud_postfilter);
+                outrem.setRadiusSearch(radius);
+                outrem.setMinNeighborsInRadius(min_neighbors);
+                outrem.filter (*cloud_postfilter);
 
-            // Creating the KdTree object for the search method of the extraction
-            search::KdTree<PointType>::Ptr tree (new search::KdTree<PointType>);
-            tree->setInputCloud (cloud_postfilter);
+                // Creating the KdTree object for the search method of the extraction
+                search::KdTree<PointType>::Ptr tree (new search::KdTree<PointType>);
+                tree->setInputCloud (cloud_postfilter);
 
-            float cluster_tolerance = 4.0f;
-            int min_cluster_size = 5;
-            int max_cluster_size = 25000;
-            vector<PointIndices> cluster_indices;
-            EuclideanClusterExtraction<PointType> ec;
-            ec.setClusterTolerance (cluster_tolerance);
-            ec.setMinClusterSize (min_cluster_size);
-            ec.setMaxClusterSize (max_cluster_size);
-            ec.setSearchMethod (tree);
-            ec.setInputCloud (cloud_postfilter);
-            ec.extract (cluster_indices);
+                float cluster_tolerance = 4.0f;
+                int min_cluster_size = 5;
+                int max_cluster_size = 25000;
+                vector<PointIndices> cluster_indices;
+                EuclideanClusterExtraction<PointType> ec;
+                ec.setClusterTolerance (cluster_tolerance);
+                ec.setMinClusterSize (min_cluster_size);
+                ec.setMaxClusterSize (max_cluster_size);
+                ec.setSearchMethod (tree);
+                ec.setInputCloud (cloud_postfilter);
+                ec.extract (cluster_indices);
 
-            // iterate through all points in each cluster
-            for (vector<PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); it++) {
-                // set colors and compute centroids
-                PointCloud<PointType>::Ptr cluster_points (new PointCloud<PointType>);
-                array<double, 2> centroid = {0, 0};
-                for (auto pit = it->indices.begin (); pit != it->indices.end (); pit++) {
-                    cluster_points->push_back(cloud_postfilter->points[*pit]);
-                    centroid[0] += cloud_postfilter->points[*pit].x;
-                    centroid[1] += cloud_postfilter->points[*pit].y;
+                // iterate through all points in each cluster
+                for (vector<PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); it++) {
+                    // set colors and compute centroids
+                    PointCloud<PointType>::Ptr cluster_points (new PointCloud<PointType>);
+                    array<double, 2> centroid = {0, 0};
+                    for (int indice : it->indices) {
+                        cluster_points->push_back(cloud_postfilter->points[indice]);
+                        centroid[0] += cloud_postfilter->points[indice].x;
+                        centroid[1] += cloud_postfilter->points[indice].y;
+                    }
+                    if(cluster_points->width * cluster_points->height > 0) {
+                        centroid[0] /= cluster_points->width * cluster_points->height;
+                        centroid[1] /= cluster_points->width * cluster_points->height;
+
+                        PointCloud<PointType>::Ptr cloud_hull (new PointCloud<PointType>);
+                        ConvexHull<PointType> chull;
+                        chull.setInputCloud (cluster_points);
+                        chull.reconstruct (*cloud_hull);
+                        cluster_polygon.push_back(cloud_hull);
+                        cluster_centers.push_back(centroid);
+                    }
                 }
-                if(cluster_points->width * cluster_points->height > 0) {
-                    centroid[0] /= cluster_points->width * cluster_points->height;
-                    centroid[1] /= cluster_points->width * cluster_points->height;
-
-                    PointCloud<PointType>::Ptr cloud_hull (new PointCloud<PointType>);
-                    ConvexHull<PointType> chull;
-                    chull.setInputCloud (cluster_points);
-                    chull.reconstruct (*cloud_hull);
-                    cluster_polygon.push_back(cloud_hull);
-                    cluster_centers.push_back(centroid);
-                }
-            }
-//            cloud = cloud_postfilter;
-        };
+    //            cloud = cloud_postfilter;
+            };
 
     // VLP Grabber
     boost::shared_ptr<HDLGrabber> grabber;
