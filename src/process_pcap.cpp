@@ -3,8 +3,6 @@
 #include <array>
 
 #include <pcl/io/pcd_io.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
 #include <pcl/io/hdl_grabber.h>
 #include <pcl/console/parse.h>
 #include <pcl/visualization/pcl_visualizer.h>
@@ -15,7 +13,6 @@
 #include <pcl/filters/conditional_removal.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/project_inliers.h>
-#include <pcl/ModelCoefficients.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/surface/convex_hull.h>
 
@@ -30,7 +27,7 @@ int main(int argc, char *argv[]) {
 	// Command-Line Argument Parsing
     if( console::find_switch( argc, argv, "-help" ) ){
         cout << "usage: " << argv[0]
-            << " [-calibrationFile]"
+//            << " [-calibrationFile]"
             << " [-pcap <*.pcap>]"
             << " [-help]"
             << endl;
@@ -189,10 +186,6 @@ int main(int argc, char *argv[]) {
         boost::mutex::scoped_try_lock lock( mutex );
 
         if(lock.owns_lock()) {
-            // visualization::PointCloudColorHandlerRGBField<PointXYZRGBA> rgb(cloud);
-            // if( !viewer->updatePointCloud( cloud, rgb, "cloud" ) ){
-            //     viewer->addPointCloud( cloud, rgb, "cloud" );
-            // }
             viewer->removeAllShapes();
 
             std::cout << "NEW FRAME" << std::endl;
@@ -228,11 +221,6 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 std::cout << std::endl;
-//                viewer->addSphere (chull->points[0], 0.5, 1.0, 1.0, 1.0);
-//                  viewer->addPolygon<PointType> (chull, (double)r / 255.0, (double)g / 255.0, (double)b / 255.0, id);
-//                pcl::visualization::PointCloudColorHandlerCustom<PointType> single_color(chull, r, g, b);
-//                if( !viewer->updatePointCloud ( chull, single_color, id ) ){
-//                    viewer->addPointCloud (chull, single_color, id);
 //                }
             }
         }
