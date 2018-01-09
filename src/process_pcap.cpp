@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
             tree->setInputCloud (cloud_filtered);
 
             float cluster_tolerance = 4.0f;
-            int min_cluster_size = 10;
+            int min_cluster_size = 5;
             int max_cluster_size = 25000;
             vector<PointIndices> cluster_indices;
             EuclideanClusterExtraction<PointType> ec;
