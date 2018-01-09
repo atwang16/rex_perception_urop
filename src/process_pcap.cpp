@@ -1,6 +1,6 @@
 #include <iostream>
-#include <string>
 #include <vector>
+#include <array>
 
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_cloud.h>
@@ -43,7 +43,10 @@ int main(int argc, char *argv[]) {
     // Point Cloud
     PointCloud<PointType>::ConstPtr cloud (new PointCloud<PointType>);
     vector<PointCloud<PointType>::Ptr> cluster_polygon;
+    vector<array<double, 2> > cluster_centers;
     vector<vector<double> > cluster_colors;
+
+    double RADIUS = 0.3;
 
     // PCL Visualizer
     boost::shared_ptr<visualization::PCLVisualizer> viewer( new visualization::PCLVisualizer( "Velodyne Viewer" ) );
@@ -55,11 +58,12 @@ int main(int argc, char *argv[]) {
     // Retrieved Point Cloud Callback Function
     boost::mutex mutex;
     boost::function<void( const PointCloud<PointType>::ConstPtr& )> function =
-        [ &cloud, &cluster_polygon, &mutex ]( const PointCloud<PointType>::ConstPtr& ptr ){
+        [ &cloud, &cluster_polygon, &cluster_centers, &mutex ]( const PointCloud<PointType>::ConstPtr& ptr ){
             boost::mutex::scoped_lock lock( mutex ); // for multi-threading
 
             /* Point Cloud Processing */
             cluster_polygon.clear();
+            cluster_centers.clear();
             PointCloud<PointType>::Ptr cloud_filtered (new PointCloud<PointType>);
             cloud = ptr;
 
@@ -144,22 +148,30 @@ int main(int argc, char *argv[]) {
             for (vector<PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); it++) {
                 // set colors and compute centroids
                 PointCloud<PointType>::Ptr cluster_points (new PointCloud<PointType>);
+                array<double, 2> centroid = {0, 0};
                 for (vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); pit++) {
                     cluster_points->push_back(cloud_filtered->points[*pit]);
+                    centroid[0] += cloud_filtered->points[*pit].x;
+                    centroid[1] += cloud_filtered->points[*pit].y;
                 }
-                PointCloud<PointType>::Ptr cloud_hull (new PointCloud<PointType>);
-                ConvexHull<PointType> chull;
-                chull.setInputCloud (cluster_points);
-                chull.reconstruct (*cloud_hull);
+                if(cluster_points->width * cluster_points->height > 0) {
+                    centroid[0] /= cluster_points->width * cluster_points->height;
+                    centroid[1] /= cluster_points->width * cluster_points->height;
 
-                cluster_polygon.push_back(cloud_hull);
+                    PointCloud<PointType>::Ptr cloud_hull (new PointCloud<PointType>);
+                    ConvexHull<PointType> chull;
+                    chull.setInputCloud (cluster_points);
+                    chull.reconstruct (*cloud_hull);
+                    cluster_polygon.push_back(cloud_hull);
+                    cluster_centers.push_back(centroid);
+                }
             }
             cloud = cloud_filtered;
         };
 
     // VLP Grabber
     boost::shared_ptr<HDLGrabber> grabber;
-    if( !pcap.empty() ){
+    if( !pcap.empty() ) {
         cout << "Capture from PCAP..." << endl;
         grabber = boost::shared_ptr<HDLGrabber>( new HDLGrabber( "", pcap ) );
     }
@@ -181,25 +193,47 @@ int main(int argc, char *argv[]) {
             // if( !viewer->updatePointCloud( cloud, rgb, "cloud" ) ){
             //     viewer->addPointCloud( cloud, rgb, "cloud" );
             // }
+            viewer->removeAllShapes();
 
+            std::cout << "NEW FRAME" << std::endl;
+
+            PointCloud<PointType>::Ptr chull;
+            array<double, 2> center;
+            double r = 0, g = 0, b = 0;
             for (int i = 0; i < cluster_polygon.size(); i++) {
-                PointCloud<PointType>::Ptr chull = cluster_polygon[i];
-                double r = 0, g = 0, b = 0;
+                chull = cluster_polygon[i];
+                center = cluster_centers[i];
                 if(i < cluster_colors.size()) { // color already chosen for cluster
                     r = cluster_colors[i][0];
                     g = cluster_colors[i][1];
                     b = cluster_colors[i][2];
                 }
                 else { // generate a random color
-                    r = (double)rand() / RAND_MAX; // normalize between 0.0 and 1.0
-                    g = (double)rand() / RAND_MAX;
-                    b = (double)rand() / RAND_MAX;
+                    r = ((double)(rand()) / RAND_MAX); // normalize between 0.0 and 1.0
+                    g = ((double)(rand()) / RAND_MAX);
+                    b = ((double)(rand()) / RAND_MAX);
                     vector<double> rgb = {r, g, b};
                     cluster_colors.push_back(rgb);
                 }
-                viewer->addPolygon<PointType> (chull, r, g, b, "polygon", 0);
-                // pcl::visualization::PointCloudColorHandlerCustom<PointType> single_color(chull, (uint32_t)(r * 255), (uint32_t)(g * 255), (uint32_t)(b * 255));
-                // viewer->addPointCloud<PointType> (chull, single_color, "cloud");
+
+                std::cout << "Center: ";
+                std::cout << "(" << center[0] << ", " << center[1] << ")" << std::endl;
+
+                std::cout << "Bounding box: ";
+                for (size_t j = 0; j < chull->size(); j++) {
+                    string id = "sphere_" + to_string(i) + "_" + to_string(j);
+                    std::cout << "(" << chull->points[j].x << ", " << chull->points[j].y << ") ";
+                    if( !viewer->updateSphere ( chull->points[j], RADIUS, r, g, b, id ) ){
+                        viewer->addSphere ( chull->points[j], RADIUS, r, g, b, id );
+                    }
+                }
+                std::cout << std::endl;
+//                viewer->addSphere (chull->points[0], 0.5, 1.0, 1.0, 1.0);
+//                  viewer->addPolygon<PointType> (chull, (double)r / 255.0, (double)g / 255.0, (double)b / 255.0, id);
+//                pcl::visualization::PointCloudColorHandlerCustom<PointType> single_color(chull, r, g, b);
+//                if( !viewer->updatePointCloud ( chull, single_color, id ) ){
+//                    viewer->addPointCloud (chull, single_color, id);
+//                }
             }
         }
     }
