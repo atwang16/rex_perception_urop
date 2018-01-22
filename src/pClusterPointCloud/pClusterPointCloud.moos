@@ -1,0 +1,9 @@
+//------------------------------------------------
+// pClusterPointCloud config block
+
+ProcessConfig = pClusterPointCloud
+{
+   AppTick   = 4
+   CommsTick = 4
+}
+
