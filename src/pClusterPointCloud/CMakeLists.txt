@@ -3,6 +3,9 @@
 # Author(s):                              Austin Wang
 #--------------------------------------------------------
 
+set(MY_SOURCE_DIR "/usr/local")
+include_directories(${MY_SOURCE_DIR}/include)
+
 SET(SRC
   ClusterPointCloud.cpp
   ClusterPointCloud_Info.cpp
@@ -16,4 +19,13 @@ TARGET_LINK_LIBRARIES(pClusterPointCloud
    mbutil
    m
    pthread)
+
+find_package(PCL 1.8 REQUIRED)
+
+if( PCL_FOUND )
+    include_directories(${PCL_INCLUDE_DIRS})
+    link_directories(${PCL_LIBRARY_DIRS})
+    add_definitions(${PCL_DEFINITIONS})
+    target_link_libraries(pClusterPointCloud ${PCL_LIBRARIES})
+endif()
 
